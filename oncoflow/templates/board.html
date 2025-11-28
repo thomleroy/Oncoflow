@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Oncoflow · Board dossiers</title>
+  <link
+    href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.4/dist/tailwind.min.css"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="bg-slate-950 text-slate-50">
+  <div class="max-w-7xl mx-auto px-6 py-10 space-y-8">
+    <header class="flex flex-wrap gap-4 items-center justify-between">
+      <div>
+        <p class="text-sm text-slate-400">File active</p>
+        <h1 class="text-3xl font-bold text-white">Board des dossiers patients</h1>
+        <p class="text-sm text-slate-400">Glisser/valider les étapes en respectant les prérequis métier.</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="seed-demo" class="btn">Générer une démo</button>
+        <a href="/" class="btn" style="background: linear-gradient(90deg,#22c55e,#14b8a6)">Admin workflow</a>
+      </div>
+    </header>
+
+    <section class="grid md:grid-cols-3 gap-4" id="board-columns"></section>
+  </div>
+
+  <template id="card-template">
+    <div class="panel space-y-3">
+      <div class="flex items-center justify-between">
+        <div class="font-semibold text-slate-50 text-lg card-title"></div>
+        <span class="pill"></span>
+      </div>
+      <div class="text-sm text-slate-300 leading-6 info"></div>
+      <div class="chip-row tags"></div>
+      <div class="space-y-2">
+        <label class="label">Rôle</label>
+        <select class="select role-select"></select>
+        <label class="label">Commentaire (recul ou note)</label>
+        <textarea class="input comment" rows="2" placeholder="Contexte, justification, consignes"></textarea>
+      </div>
+      <div class="space-y-2 actions"></div>
+      <div class="text-xs text-slate-400">
+        <p class="font-semibold text-slate-200">Historique</p>
+        <ul class="history list-disc pl-4 space-y-1"></ul>
+      </div>
+    </div>
+  </template>
+
+  <script>
+    const config = {{ config | tojson }};
+    const statuses = {{ statuses | tojson }};
+    const boardColumns = document.getElementById('board-columns');
+    const cardTemplate = document.getElementById('card-template');
+    const roleOptions = ['manipulateur', 'physicien', 'oncologue', 'dosimetrist', 'coordination'];
+
+    function statusLabel(status) {
+      return status.replaceAll('_', ' ');
+    }
+
+    function buildContext(target) {
+      const requirement = config.checklist_requirements[target];
+      if (!requirement) return {};
+      return { [requirement]: true };
+    }
+
+    function populateRoles(select, allowed) {
+      select.innerHTML = '';
+      roleOptions.forEach((role) => {
+        const option = document.createElement('option');
+        option.value = role;
+        option.textContent = role;
+        option.selected = allowed.includes(role);
+        select.appendChild(option);
+      });
+      if (allowed.length === 1) {
+        select.value = allowed[0];
+      }
+    }
+
+    function renderHistory(list, events) {
+      list.innerHTML = '';
+      if (!events.length) {
+        list.innerHTML = '<li class="text-slate-500">Aucun mouvement</li>';
+        return;
+      }
+      events
+        .slice()
+        .reverse()
+        .forEach((event) => {
+          const li = document.createElement('li');
+          li.innerHTML = `<span class="text-slate-200">${event.nouveau_statut}</span> · <span class="text-slate-400">${event.role}</span>`;
+          list.appendChild(li);
+        });
+    }
+
+    function isBackward(current, target) {
+      const order = config.status_order;
+      return order.indexOf(target) < order.indexOf(current);
+    }
+
+    async function applyTransition(card, dossierId, currentStatus, target) {
+      const commentField = card.querySelector('.comment');
+      const roleSelect = card.querySelector('.role-select');
+      const actor = 'console';
+      const role = roleSelect.value;
+      const context = buildContext(target);
+
+      if (isBackward(currentStatus, target) && !commentField.value.trim()) {
+        alert('Un commentaire est requis pour revenir en arrière.');
+        return;
+      }
+
+      const payload = {
+        cible: target,
+        contexte: context,
+        commentaire: commentField.value || null,
+        acteur: actor,
+        role,
+      };
+
+      const button = card.querySelector(`button[data-target="${target}"]`);
+      if (button) button.disabled = true;
+      try {
+        const res = await fetch(`/dossiers/${dossierId}/transition`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const detail = (await res.json()).detail || 'Erreur inconnue';
+          throw new Error(detail);
+        }
+        await loadBoard();
+      } catch (error) {
+        alert(error.message);
+      } finally {
+        if (button) button.disabled = false;
+      }
+    }
+
+    function renderCard(status, dossier) {
+      const fragment = cardTemplate.content.cloneNode(true);
+      const card = fragment.querySelector('.panel');
+      card.querySelector('.card-title').textContent = dossier.patient || 'Patient';
+      const badge = card.querySelector('.pill');
+      badge.textContent = statusLabel(status);
+      badge.style.background = 'rgba(56,189,248,0.1)';
+      badge.style.color = '#7dd3fc';
+
+      const info = card.querySelector('.info');
+      info.innerHTML = `Machine : <strong>${dossier.machine || '—'}</strong><br/>Protocole : ${dossier.protocole || '—'} · Priorité : ${dossier.priorite || '—'}`;
+
+      const tags = card.querySelector('.tags');
+      if (dossier.etiquettes && dossier.etiquettes.length) {
+        tags.innerHTML = dossier.etiquettes.map((t) => `<span class="chip">${t}</span>`).join('');
+      } else {
+        tags.innerHTML = '<span class="muted">Aucune étiquette</span>';
+      }
+
+      populateRoles(card.querySelector('.role-select'), config.allowed_roles[dossier.statut] || roleOptions);
+      renderHistory(card.querySelector('.history'), dossier.historique || []);
+
+      const actionsContainer = card.querySelector('.actions');
+      const allowedTargets = config.transitions[dossier.statut] || [];
+      if (!allowedTargets.length) {
+        actionsContainer.innerHTML = '<p class="muted">Aucune transition configurée.</p>';
+      } else {
+        allowedTargets.forEach((target) => {
+          const prereq = config.checklist_requirements[target];
+          const backward = isBackward(dossier.statut, target);
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.dataset.target = target;
+          button.className = 'btn w-full';
+          button.textContent = `Passer en ${statusLabel(target)}`;
+          const helper = document.createElement('p');
+          helper.className = 'help';
+          helper.textContent = backward
+            ? 'Commentaire requis pour retour en arrière'
+            : prereq
+            ? `Pré-requis : ${prereq}`
+            : 'Transition directe';
+          button.addEventListener('click', () => applyTransition(card, dossier.id, dossier.statut, target));
+          const wrapper = document.createElement('div');
+          wrapper.appendChild(button);
+          wrapper.appendChild(helper);
+          actionsContainer.appendChild(wrapper);
+        });
+      }
+
+      return fragment;
+    }
+
+    function renderBoard(data) {
+      boardColumns.innerHTML = '';
+      statuses.forEach((status) => {
+        const column = document.createElement('div');
+        column.className = 'card space-y-4';
+        column.innerHTML = `
+          <div class="card-header">
+            <div>
+              <p class="eyebrow">${statusLabel(status)}</p>
+              <h2 class="card-title">${(data[status] || []).length} dossiers</h2>
+            </div>
+            <div class="pill">${config.checklist_requirements[status] || 'aucun prérequis'}</div>
+          </div>
+        `;
+        const stack = document.createElement('div');
+        stack.className = 'space-y-3';
+        (data[status] || []).forEach((dossier) => {
+          stack.appendChild(renderCard(status, dossier));
+        });
+        if (!(data[status] || []).length) {
+          const empty = document.createElement('div');
+          empty.className = 'panel muted';
+          empty.textContent = 'Aucun dossier ici pour le moment';
+          stack.appendChild(empty);
+        }
+        column.appendChild(stack);
+        boardColumns.appendChild(column);
+      });
+    }
+
+    async function loadBoard() {
+      const response = await fetch('/ui/dossiers');
+      const data = await response.json();
+      renderBoard(data);
+    }
+
+    document.getElementById('seed-demo').addEventListener('click', async () => {
+      const response = await fetch('/admin/demo/seed', { method: 'POST' });
+      if (!response.ok) {
+        alert('Impossible de générer la démo');
+        return;
+      }
+      const data = await response.json();
+      renderBoard(data);
+    });
+
+    loadBoard();
+  </script>
+</body>
+</html>
