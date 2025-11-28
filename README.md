@@ -78,34 +78,6 @@ Toute transition inverse exige un commentaire et génère une notification aux r
 - [ ] Prototype d'authentification OIDC + RBAC.
 - [ ] Connecteur d'import DICOM/PACS (placeholder dans le MVP si non disponible).
 - [ ] Mécanisme de notifications (emails internes ou webhook Slack/Teams).
-
-## Installation rapide
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn oncoflow.app:app --reload
-```
-
-Pour peupler la démo :
-
-```bash
-curl -X POST http://localhost:8000/admin/demo/seed -H "X-API-Key: devkey"
-```
-
-## Sécurité et administration
-
-Les endpoints `/admin/*` et `/admin/demo/seed` exigent une clé API transmise dans `X-API-Key`. Par défaut la valeur est `devkey`; définissez `ONCOFLOW_API_KEY` pour la modifier.
-
-## Persistance
-
-Le dépôt par défaut est file-backed (`data/state.json`). Patients, dossiers, messages, notifications et historique sont écrits à chaque mutation et rechargés au démarrage.
-
-## Intégrations et notifications
-
-- Export FHIR minimal : `GET /dossiers/{id}/fhir` renvoie un bundle Patient + Procedure pour faciliter les échanges DPI/FHIR.
-- Flux de notifications : `GET /notifications` expose les derniers événements (messages, transitions) pour alimenter un webhook ou un centre de supervision.
 - [ ] Rapports d'activité et exports PDF.
 
 ## Démarrer l'API de prototype
@@ -131,9 +103,6 @@ uvicorn oncoflow.app:app --reload
 4. Ouvrir la console d'administration : http://localhost:8000/. Elle permet d'éditer en direct les transitions autorisées,
    les rôles pouvant atteindre une étape et les prérequis de checklist. Les mises à jour se propagent immédiatement aux
    validations côté API.
-
-5. Afficher le board opérationnel : http://localhost:8000/board. Il regroupe les dossiers par statut avec des boutons de
-   transition tenant compte des prérequis et permet d'injecter des données de démonstration en un clic.
 
 5. Lancer les tests automatisés :
 

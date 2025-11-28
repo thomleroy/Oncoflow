@@ -1,22 +1,11 @@
 import pytest
 from fastapi.testclient import TestClient
 
-import sys
-from pathlib import Path
-
-import pytest
-from fastapi.testclient import TestClient
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))
-
 from oncoflow.app import app
 from oncoflow.models import DossierStatus, Patient, Role
-from oncoflow.repository import FileBackedRepository, repo
+from oncoflow.repository import repo
 
 client = TestClient(app)
-ADMIN_HEADERS = {"X-API-Key": "devkey"}
 
 
 def setup_function(_function):
@@ -159,25 +148,6 @@ def test_messages_threading():
     assert body["texte"] == "Plan pret pour revue"
 
 
-def test_list_messages_endpoint():
-    _, dossier = create_patient_and_dossier()
-    dossier_id = dossier["id"]
-
-    client.post(
-        f"/dossiers/{dossier_id}/messages",
-        json={
-            "dossier_id": dossier_id,
-            "auteur": "bot",
-            "role": "coordination",
-            "texte": "Prêt",
-        },
-    )
-
-    listing = client.get(f"/dossiers/{dossier_id}/messages")
-    assert listing.status_code == 200
-    assert len(listing.json()) == 1
-
-
 def test_admin_transition_and_role_controls():
     _, dossier = create_patient_and_dossier()
     dossier_id = dossier["id"]
@@ -188,7 +158,6 @@ def test_admin_transition_and_role_controls():
             "source": DossierStatus.A_PREPARER.value,
             "targets": [DossierStatus.CONTOURS_VALIDES.value],
         },
-        headers=ADMIN_HEADERS,
     )
     assert update_transitions.status_code == 200
 
@@ -209,7 +178,6 @@ def test_admin_transition_and_role_controls():
             "status": DossierStatus.CONTOURS_VALIDES.value,
             "roles": [Role.ONCOLOGUE.value],
         },
-        headers=ADMIN_HEADERS,
     )
     assert update_roles.status_code == 200
 
@@ -234,61 +202,3 @@ def test_admin_transition_and_role_controls():
         },
     )
     assert oncologue.status_code == 200
-
-
-def test_board_grouping_and_seed():
-    seed = client.post("/admin/demo/seed", headers=ADMIN_HEADERS)
-    assert seed.status_code == 200
-    data = seed.json()
-    assert "A_PREPARER" in data
-
-    board_data = client.get("/ui/dossiers")
-    assert board_data.status_code == 200
-    board_json = board_data.json()
-    assert isinstance(board_json.get("A_PREPARER"), list)
-
-
-def test_admin_requires_api_key():
-    response = client.post("/admin/demo/seed")
-    assert response.status_code == 401
-
-
-def test_notifications_are_exposed():
-    _, dossier = create_patient_and_dossier()
-    dossier_id = dossier["id"]
-
-    client.post(
-        f"/dossiers/{dossier_id}/messages",
-        json={
-            "dossier_id": dossier_id,
-            "auteur": "bot",
-            "role": "coordination",
-            "texte": "Bonjour",
-        },
-    )
-
-    notif_resp = client.get("/notifications")
-    assert notif_resp.status_code == 200
-    assert any("message" in n["type"] for n in notif_resp.json())
-
-
-def test_file_backed_repository_persists(tmp_path):
-    path = tmp_path / "state.json"
-    file_repo = FileBackedRepository(path)
-    patient = file_repo.create_patient("Test", "User")
-    dossier = file_repo.create_dossier(patient.id, machine="Linac")
-    assert path.exists()
-
-    restored = FileBackedRepository(path)
-    assert restored.get_dossier(dossier.id).machine == "Linac"
-
-
-def test_fhir_projection():
-    _, dossier = create_patient_and_dossier()
-    dossier_id = dossier["id"]
-
-    response = client.get(f"/dossiers/{dossier_id}/fhir")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["resourceType"] == "Bundle"
-    assert body["entry"][0]["resource"]["resourceType"] == "Patient"

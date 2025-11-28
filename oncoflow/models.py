@@ -100,15 +100,6 @@ class Message(BaseModel):
     horodatage: datetime = Field(default_factory=datetime.utcnow)
 
 
-class Notification(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid4()))
-    type: str
-    message: str
-    severity: str = "info"
-    dossier_id: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-
 class ErrorResponse(BaseModel):
     detail: str
 
@@ -132,5 +123,4 @@ class WorkflowSnapshot(BaseModel):
     transitions: Dict[DossierStatus, List[DossierStatus]]
     checklist_requirements: Dict[DossierStatus, Optional[str]]
     allowed_roles: Dict[DossierStatus, List[Role]]
-    status_order: List[DossierStatus]
 
