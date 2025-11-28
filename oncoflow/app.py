@@ -12,7 +12,6 @@ from .models import (
     ErrorResponse,
     Message,
     Patient,
-    Role,
     RoleConfig,
     TransitionConfig,
     TransitionRequest,
@@ -37,7 +36,7 @@ def health() -> dict:
 
 @app.get("/", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
-    config = engine.snapshot().model_dump(mode="json")
+    config = engine.snapshot()
     return templates.TemplateResponse(
         "admin.html",
         {
@@ -45,19 +44,6 @@ def admin_dashboard(request: Request):
             "config": config,
             "statuses": list(DossierStatus),
             "checklist_fields": list(repo.get_checklist_fields()),
-        },
-    )
-
-
-@app.get("/board", response_class=HTMLResponse)
-def board_dashboard(request: Request):
-    config = engine.snapshot().model_dump(mode="json")
-    return templates.TemplateResponse(
-        "board.html",
-        {
-            "request": request,
-            "config": config,
-            "statuses": list(DossierStatus),
         },
     )
 
@@ -136,30 +122,6 @@ def transition_dossier(dossier_id: str, request: TransitionRequest, storage=Depe
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.get(
-    "/dossiers/{dossier_id}/messages",
-    response_model=list[Message],
-    responses={404: {"model": ErrorResponse}},
-)
-def list_messages(dossier_id: str, storage=Depends(get_repo)):
-    try:
-        return storage.list_messages(dossier_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@app.get(
-    "/dossiers/{dossier_id}/historique",
-    response_model=list[dict],
-    responses={404: {"model": ErrorResponse}},
-)
-def dossier_history(dossier_id: str, storage=Depends(get_repo)):
-    try:
-        return [t.model_dump(mode="json") for t in storage.get_history(dossier_id)]
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
 @app.post(
     "/dossiers/{dossier_id}/messages",
     response_model=Message,
@@ -224,17 +186,6 @@ def update_checklist(config: ChecklistConfig):
         return engine.snapshot()
     except TransitionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.get("/ui/dossiers")
-def grouped_dossiers(storage=Depends(get_repo)):
-    return storage.list_dossiers_grouped()
-
-
-@app.post("/admin/demo/seed")
-def seed_demo(storage=Depends(get_repo)):
-    storage.seed_demo()
-    return storage.list_dossiers_grouped()
 
 
 __all__ = ["app"]

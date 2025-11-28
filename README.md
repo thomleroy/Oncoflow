@@ -104,9 +104,6 @@ uvicorn oncoflow.app:app --reload
    les rôles pouvant atteindre une étape et les prérequis de checklist. Les mises à jour se propagent immédiatement aux
    validations côté API.
 
-5. Afficher le board opérationnel : http://localhost:8000/board. Il regroupe les dossiers par statut avec des boutons de
-   transition tenant compte des prérequis et permet d'injecter des données de démonstration en un clic.
-
 5. Lancer les tests automatisés :
 
 ```bash

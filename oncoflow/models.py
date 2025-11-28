@@ -123,5 +123,4 @@ class WorkflowSnapshot(BaseModel):
     transitions: Dict[DossierStatus, List[DossierStatus]]
     checklist_requirements: Dict[DossierStatus, Optional[str]]
     allowed_roles: Dict[DossierStatus, List[Role]]
-    status_order: List[DossierStatus]
 

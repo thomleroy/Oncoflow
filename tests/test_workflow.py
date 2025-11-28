@@ -1,16 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
 
-import sys
-from pathlib import Path
-
-import pytest
-from fastapi.testclient import TestClient
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))
-
 from oncoflow.app import app
 from oncoflow.models import DossierStatus, Patient, Role
 from oncoflow.repository import repo
@@ -158,25 +148,6 @@ def test_messages_threading():
     assert body["texte"] == "Plan pret pour revue"
 
 
-def test_list_messages_endpoint():
-    _, dossier = create_patient_and_dossier()
-    dossier_id = dossier["id"]
-
-    client.post(
-        f"/dossiers/{dossier_id}/messages",
-        json={
-            "dossier_id": dossier_id,
-            "auteur": "bot",
-            "role": "coordination",
-            "texte": "Prêt",
-        },
-    )
-
-    listing = client.get(f"/dossiers/{dossier_id}/messages")
-    assert listing.status_code == 200
-    assert len(listing.json()) == 1
-
-
 def test_admin_transition_and_role_controls():
     _, dossier = create_patient_and_dossier()
     dossier_id = dossier["id"]
@@ -231,15 +202,3 @@ def test_admin_transition_and_role_controls():
         },
     )
     assert oncologue.status_code == 200
-
-
-def test_board_grouping_and_seed():
-    seed = client.post("/admin/demo/seed")
-    assert seed.status_code == 200
-    data = seed.json()
-    assert "A_PREPARER" in data
-
-    board_data = client.get("/ui/dossiers")
-    assert board_data.status_code == 200
-    board_json = board_data.json()
-    assert isinstance(board_json.get("A_PREPARER"), list)
