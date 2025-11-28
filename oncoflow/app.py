@@ -1,11 +1,28 @@
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
-from .models import Dossier, ErrorResponse, Message, Patient, TransitionRequest
+from .models import (
+    ChecklistConfig,
+    Dossier,
+    DossierStatus,
+    ErrorResponse,
+    Message,
+    Patient,
+    RoleConfig,
+    TransitionConfig,
+    TransitionRequest,
+    WorkflowSnapshot,
+)
 from .repository import TransitionError, repo
+from .workflow import engine
 
 app = FastAPI(title="Oncoflow API", version="0.1.0")
+app.mount("/static", StaticFiles(directory="oncoflow/static"), name="static")
+templates = Jinja2Templates(directory="oncoflow/templates")
 
 
 def get_repo():
@@ -15,6 +32,20 @@ def get_repo():
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/", response_class=HTMLResponse)
+def admin_dashboard(request: Request):
+    config = engine.snapshot()
+    return templates.TemplateResponse(
+        "admin.html",
+        {
+            "request": request,
+            "config": config,
+            "statuses": list(DossierStatus),
+            "checklist_fields": list(repo.get_checklist_fields()),
+        },
+    )
 
 
 @app.post(
@@ -110,6 +141,51 @@ def add_message(dossier_id: str, message: Message, storage=Depends(get_repo)):
         return created
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/admin/workflow", response_model=WorkflowSnapshot)
+def get_workflow_config():
+    snapshot = engine.snapshot()
+    return snapshot
+
+
+@app.put(
+    "/admin/workflow/transitions",
+    response_model=WorkflowSnapshot,
+    responses={400: {"model": ErrorResponse}},
+)
+def update_transitions(config: TransitionConfig):
+    try:
+        engine.update_transitions(config.source, config.targets)
+        return engine.snapshot()
+    except TransitionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put(
+    "/admin/workflow/roles",
+    response_model=WorkflowSnapshot,
+    responses={400: {"model": ErrorResponse}},
+)
+def update_roles(config: RoleConfig):
+    try:
+        engine.update_allowed_roles(config.status, config.roles)
+        return engine.snapshot()
+    except TransitionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put(
+    "/admin/workflow/checklist",
+    response_model=WorkflowSnapshot,
+    responses={400: {"model": ErrorResponse}},
+)
+def update_checklist(config: ChecklistConfig):
+    try:
+        engine.update_checklist_requirement(config.status, config.requirement)
+        return engine.snapshot()
+    except TransitionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 __all__ = ["app"]

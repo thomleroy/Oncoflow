@@ -100,8 +100,19 @@ uvicorn oncoflow.app:app --reload
 
 3. Explorer la documentation OpenAPI générée automatiquement : http://localhost:8000/docs.
 
-4. Lancer les tests automatisés :
+4. Ouvrir la console d'administration : http://localhost:8000/. Elle permet d'éditer en direct les transitions autorisées,
+   les rôles pouvant atteindre une étape et les prérequis de checklist. Les mises à jour se propagent immédiatement aux
+   validations côté API.
+
+5. Lancer les tests automatisés :
 
 ```bash
 pytest
 ```
+
+### Endpoints d'administration
+
+- `GET /admin/workflow` : récupérer la configuration courante (transitions, prérequis, rôles).
+- `PUT /admin/workflow/transitions` : modifier les cibles autorisées pour un statut source.
+- `PUT /admin/workflow/roles` : restreindre ou élargir les rôles autorisés pour un statut cible.
+- `PUT /admin/workflow/checklist` : définir ou retirer un prérequis de checklist pour un statut.

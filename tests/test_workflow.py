@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from oncoflow.app import app
-from oncoflow.models import DossierStatus, Patient
+from oncoflow.models import DossierStatus, Patient, Role
 from oncoflow.repository import repo
 
 client = TestClient(app)
@@ -146,3 +146,59 @@ def test_messages_threading():
     body = message_response.json()
     assert body["dossier_id"] == dossier_id
     assert body["texte"] == "Plan pret pour revue"
+
+
+def test_admin_transition_and_role_controls():
+    _, dossier = create_patient_and_dossier()
+    dossier_id = dossier["id"]
+
+    update_transitions = client.put(
+        "/admin/workflow/transitions",
+        json={
+            "source": DossierStatus.A_PREPARER.value,
+            "targets": [DossierStatus.CONTOURS_VALIDES.value],
+        },
+    )
+    assert update_transitions.status_code == 200
+
+    response = client.post(
+        f"/dossiers/{dossier_id}/transition",
+        json={
+            "cible": DossierStatus.PRESCRIPTION_VALIDEE.value,
+            "contexte": {"identity_validated": True},
+            "acteur": "bot",
+            "role": Role.PHYSICIEN.value,
+        },
+    )
+    assert response.status_code == 400
+
+    update_roles = client.put(
+        "/admin/workflow/roles",
+        json={
+            "status": DossierStatus.CONTOURS_VALIDES.value,
+            "roles": [Role.ONCOLOGUE.value],
+        },
+    )
+    assert update_roles.status_code == 200
+
+    response_bis = client.post(
+        f"/dossiers/{dossier_id}/transition",
+        json={
+            "cible": DossierStatus.CONTOURS_VALIDES.value,
+            "contexte": {"prescription_signed": True},
+            "acteur": "bot",
+            "role": Role.PHYSICIEN.value,
+        },
+    )
+    assert response_bis.status_code == 400
+
+    oncologue = client.post(
+        f"/dossiers/{dossier_id}/transition",
+        json={
+            "cible": DossierStatus.CONTOURS_VALIDES.value,
+            "contexte": {"prescription_signed": True},
+            "acteur": "dr aude",
+            "role": Role.ONCOLOGUE.value,
+        },
+    )
+    assert oncologue.status_code == 200

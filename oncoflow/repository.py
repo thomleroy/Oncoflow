@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from .models import Dossier, DossierStatus, Message, Patient, Transition, TransitionRequest
+from .models import (
+    ChecklistState,
+    Dossier,
+    DossierStatus,
+    Message,
+    Patient,
+    Transition,
+    TransitionRequest,
+)
 from .workflow import TransitionError, engine
 
 
@@ -105,6 +113,9 @@ class InMemoryRepository:
         dossier.historique.append(transition)
         self.dossiers[dossier.id] = dossier
         return transition
+
+    def get_checklist_fields(self):
+        return ChecklistState.model_fields.keys()
 
 
 repo = InMemoryRepository()

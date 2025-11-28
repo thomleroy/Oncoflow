@@ -103,3 +103,24 @@ class Message(BaseModel):
 class ErrorResponse(BaseModel):
     detail: str
 
+
+class TransitionConfig(BaseModel):
+    source: DossierStatus
+    targets: List[DossierStatus]
+
+
+class RoleConfig(BaseModel):
+    status: DossierStatus
+    roles: List[Role]
+
+
+class ChecklistConfig(BaseModel):
+    status: DossierStatus
+    requirement: Optional[str] = None
+
+
+class WorkflowSnapshot(BaseModel):
+    transitions: Dict[DossierStatus, List[DossierStatus]]
+    checklist_requirements: Dict[DossierStatus, Optional[str]]
+    allowed_roles: Dict[DossierStatus, List[Role]]
+

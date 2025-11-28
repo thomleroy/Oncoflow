@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from .models import ChecklistState, DossierStatus, Transition
+from .models import ChecklistState, DossierStatus, Role, Transition
 
 
 class TransitionError(ValueError):
@@ -52,6 +52,17 @@ class WorkflowEngine:
         DossierStatus.A_REPRENDRE_CONTOURAGE: [DossierStatus.CONTOURS_VALIDES],
     }
 
+    allowed_roles: Dict[DossierStatus, List[Role]] = {
+        status: [
+            Role.MANIPULATEUR,
+            Role.PHYSICIEN,
+            Role.ONCOLOGUE,
+            Role.DOSIMETRISTE,
+            Role.COORDINATION,
+        ]
+        for status in DossierStatus
+    }
+
     checklist_requirements: Dict[DossierStatus, str] = {
         DossierStatus.PRESCRIPTION_VALIDEE: "identity_validated",
         DossierStatus.CONTOURS_VALIDES: "prescription_signed",
@@ -67,12 +78,20 @@ class WorkflowEngine:
         target: DossierStatus,
         checklist: ChecklistState,
         commentaire: str | None = None,
+        role: Role | None = None,
     ) -> None:
         allowed_targets = self.forward_rules.get(current, [])
         if target not in allowed_targets:
             raise TransitionError(
                 f"Transition {current.value} -> {target.value} non autorisee"
             )
+
+        if role:
+            authorized_roles = self.allowed_roles.get(target, [])
+            if authorized_roles and role not in authorized_roles:
+                raise TransitionError(
+                    f"Le role {role.value} n'est pas autorise pour atteindre {target.value}"
+                )
 
         requirement = self.checklist_requirements.get(target)
         if requirement:
@@ -104,7 +123,7 @@ class WorkflowEngine:
         role,
         commentaire: str | None = None,
     ) -> Transition:
-        self.validate_transition(current, target, checklist, commentaire)
+        self.validate_transition(current, target, checklist, commentaire, role)
         return Transition(
             dossier_id=dossier_id,
             ancien_statut=current,
@@ -113,6 +132,47 @@ class WorkflowEngine:
             role=role,
             commentaire=commentaire,
         )
+
+    def update_transitions(
+        self, source: DossierStatus, targets: List[DossierStatus]
+    ) -> None:
+        invalid_targets = [t for t in targets if t not in DossierStatus]
+        if invalid_targets:
+            raise TransitionError(
+                f"Cibles invalides: {', '.join([t.value for t in invalid_targets])}"
+            )
+        self.forward_rules[source] = targets
+
+    def update_allowed_roles(self, status: DossierStatus, roles: List[Role]) -> None:
+        self.allowed_roles[status] = roles
+
+    def update_checklist_requirement(
+        self, status: DossierStatus, requirement: str | None
+    ) -> None:
+        if requirement and requirement not in ChecklistState.model_fields:
+            raise TransitionError(
+                f"Le pre-requis {requirement} n'existe pas dans la checklist"
+            )
+        if requirement:
+            self.checklist_requirements[status] = requirement
+        elif status in self.checklist_requirements:
+            del self.checklist_requirements[status]
+
+    def snapshot(self) -> dict:
+        return {
+            "transitions": {
+                status.value: [target.value for target in targets]
+                for status, targets in self.forward_rules.items()
+            },
+            "checklist_requirements": {
+                status.value: requirement
+                for status, requirement in self.checklist_requirements.items()
+            },
+            "allowed_roles": {
+                status.value: [role.value for role in roles]
+                for status, roles in self.allowed_roles.items()
+            },
+        }
 
 
 engine = WorkflowEngine()
