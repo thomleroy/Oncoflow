@@ -19,19 +19,6 @@
         <p class="text-sm text-slate-400">Glisser/valider les étapes en respectant les prérequis métier.</p>
       </div>
       <div class="flex items-center gap-3">
-        <div class="panel !bg-slate-900 border border-slate-800 shadow-inner">
-          <p class="text-xs text-slate-400 mb-2">Identité (utilisée pour les validations)</p>
-          <div class="flex gap-2">
-            <input id="user-input" class="input" placeholder="Utilisateur" aria-label="Utilisateur" />
-            <select id="role-input" class="select" aria-label="Role">
-              <option value="manipulateur">manipulateur</option>
-              <option value="physicien">physicien</option>
-              <option value="oncologue">oncologue</option>
-              <option value="dosimetrist">dosimetrist</option>
-              <option value="coordination">coordination</option>
-            </select>
-          </div>
-        </div>
         <button id="seed-demo" class="btn">Générer une démo</button>
         <a href="/" class="btn" style="background: linear-gradient(90deg,#22c55e,#14b8a6)">Admin workflow</a>
       </div>
@@ -68,26 +55,6 @@
     const boardColumns = document.getElementById('board-columns');
     const cardTemplate = document.getElementById('card-template');
     const roleOptions = ['manipulateur', 'physicien', 'oncologue', 'dosimetrist', 'coordination'];
-    const userInput = document.getElementById('user-input');
-    const roleInput = document.getElementById('role-input');
-
-    function currentIdentity() {
-      const stored = JSON.parse(localStorage.getItem('identity') || '{}');
-      return {
-        user: stored.user || 'console',
-        role: stored.role || 'physicien',
-      };
-    }
-
-    function persistIdentity(user, role) {
-      localStorage.setItem('identity', JSON.stringify({ user, role }));
-    }
-
-    function syncIdentityInputs() {
-      const identity = currentIdentity();
-      userInput.value = identity.user;
-      roleInput.value = identity.role;
-    }
 
     function statusLabel(status) {
       return status.replaceAll('_', ' ');
@@ -101,28 +68,16 @@
 
     function populateRoles(select, allowed) {
       select.innerHTML = '';
-      const identityRole = currentIdentity().role;
       roleOptions.forEach((role) => {
         const option = document.createElement('option');
         option.value = role;
         option.textContent = role;
-        option.selected = role === identityRole || allowed.includes(role);
+        option.selected = allowed.includes(role);
         select.appendChild(option);
       });
       if (allowed.length === 1) {
         select.value = allowed[0];
-      } else if (allowed.includes(identityRole)) {
-        select.value = identityRole;
       }
-    }
-
-    function identityHeaders(roleOverride) {
-      const identity = currentIdentity();
-      return {
-        'Content-Type': 'application/json',
-        'X-User': identity.user,
-        'X-Role': roleOverride || identity.role,
-      };
     }
 
     function renderHistory(list, events) {
@@ -149,8 +104,8 @@
     async function applyTransition(card, dossierId, currentStatus, target) {
       const commentField = card.querySelector('.comment');
       const roleSelect = card.querySelector('.role-select');
+      const actor = 'console';
       const role = roleSelect.value;
-      const identity = currentIdentity();
       const context = buildContext(target);
 
       if (isBackward(currentStatus, target) && !commentField.value.trim()) {
@@ -162,7 +117,7 @@
         cible: target,
         contexte: context,
         commentaire: commentField.value || null,
-        acteur: identity.user,
+        acteur: actor,
         role,
       };
 
@@ -171,7 +126,7 @@
       try {
         const res = await fetch(`/dossiers/${dossierId}/transition`, {
           method: 'POST',
-          headers: identityHeaders(role),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
         if (!res.ok) {
@@ -274,16 +229,6 @@
       const data = await response.json();
       renderBoard(data);
     }
-
-    syncIdentityInputs();
-    userInput.addEventListener('change', () => {
-      persistIdentity(userInput.value || 'console', roleInput.value);
-      loadBoard();
-    });
-    roleInput.addEventListener('change', () => {
-      persistIdentity(userInput.value || 'console', roleInput.value);
-      loadBoard();
-    });
 
     document.getElementById('seed-demo').addEventListener('click', async () => {
       const response = await fetch('/admin/demo/seed', { method: 'POST' });
