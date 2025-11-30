@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Oncoflow · Admin Workflow</title>
+  <link
+    href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.4/dist/tailwind.min.css"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="bg-slate-100 text-slate-900">
+  <div class="max-w-6xl mx-auto px-6 py-10 space-y-10">
+    <header class="flex items-center justify-between">
+      <div>
+        <p class="text-sm text-slate-500">Console administration</p>
+        <h1 class="text-3xl font-semibold text-slate-900">Workflow radiothérapie</h1>
+        <p class="text-sm text-slate-500">Pilotez les étapes, les autorisations et les prérequis en direct.</p>
+      </div>
+      <span class="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-3 py-2 text-sm font-medium shadow-sm">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
+        API prête</span>
+    </header>
+
+    <section class="grid md:grid-cols-2 gap-6">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Transitions</p>
+            <h2 class="card-title">Configurer les étapes</h2>
+          </div>
+          <div class="pill">Temps réel</div>
+        </div>
+        <div class="space-y-4" id="transitions-grid">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Autorisations</p>
+            <h2 class="card-title">Rôles par étape</h2>
+          </div>
+          <div class="pill">RBAC</div>
+        </div>
+        <div class="space-y-4" id="roles-grid"></div>
+      </div>
+    </section>
+
+    <section class="grid md:grid-cols-2 gap-6">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Checklists</p>
+            <h2 class="card-title">Prérequis métier</h2>
+          </div>
+          <div class="pill">Sécurité</div>
+        </div>
+        <div class="space-y-4" id="checklist-grid"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Actions rapides</p>
+            <h2 class="card-title">Ajuster le workflow</h2>
+          </div>
+          <div class="pill">En direct</div>
+        </div>
+        <div class="space-y-6">
+          <form id="transition-form" class="form-grid">
+            <div>
+              <label class="label" for="transition-source">Étape source</label>
+              <select id="transition-source" name="source" class="select"></select>
+            </div>
+            <div>
+              <label class="label" for="transition-targets">Cibles autorisées</label>
+              <input id="transition-targets" name="targets" class="input" placeholder="Ex: PLAN_VALIDE, PRET_POUR_TRAITEMENT" />
+              <p class="help">Liste séparée par des virgules (respecter les identifiants exacts).</p>
+            </div>
+            <button class="btn" type="submit">Mettre à jour les transitions</button>
+          </form>
+
+          <form id="roles-form" class="form-grid">
+            <div>
+              <label class="label" for="roles-status">Étape</label>
+              <select id="roles-status" name="status" class="select"></select>
+            </div>
+            <fieldset class="space-y-2" id="roles-options"></fieldset>
+            <button class="btn" type="submit">Enregistrer les rôles</button>
+          </form>
+
+          <form id="checklist-form" class="form-grid">
+            <div>
+              <label class="label" for="checklist-status">Étape</label>
+              <select id="checklist-status" name="status" class="select"></select>
+            </div>
+            <div>
+              <label class="label" for="checklist-requirement">Pré-requis</label>
+              <select id="checklist-requirement" name="requirement" class="select"></select>
+              <p class="help">Choisir « Aucun » pour retirer la contrainte.</p>
+            </div>
+            <button class="btn" type="submit">Mettre à jour le prérequis</button>
+          </form>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const snapshot = {{ config | tojson }};
+    const statuses = {{ statuses | tojson }};
+    const checklistFields = {{ checklist_fields | tojson }};
+
+    const transitionsGrid = document.getElementById('transitions-grid');
+    const rolesGrid = document.getElementById('roles-grid');
+    const checklistGrid = document.getElementById('checklist-grid');
+
+    const transitionForm = document.getElementById('transition-form');
+    const rolesForm = document.getElementById('roles-form');
+    const checklistForm = document.getElementById('checklist-form');
+
+    function renderTransitions(data) {
+      transitionsGrid.innerHTML = '';
+      Object.entries(data.transitions).forEach(([status, targets]) => {
+        const chipTargets = targets.map(t => `<span class="chip">${t}</span>`).join('');
+        const card = document.createElement('div');
+        card.className = 'panel';
+        card.innerHTML = `
+          <div class="panel-title">${status}</div>
+          <div class="chip-row">${chipTargets || '<span class="muted">Aucune transition configurée</span>'}</div>
+        `;
+        transitionsGrid.appendChild(card);
+      });
+    }
+
+    function renderRoles(data) {
+      rolesGrid.innerHTML = '';
+      Object.entries(data.allowed_roles).forEach(([status, roles]) => {
+        const chips = roles.map(r => `<span class="chip chip-alt">${r}</span>`).join('');
+        const card = document.createElement('div');
+        card.className = 'panel';
+        card.innerHTML = `
+          <div class="panel-title">${status}</div>
+          <div class="chip-row">${chips || '<span class="muted">Aucun rôle autorisé</span>'}</div>
+        `;
+        rolesGrid.appendChild(card);
+      });
+    }
+
+    function renderChecklist(data) {
+      checklistGrid.innerHTML = '';
+      Object.entries(data.checklist_requirements).forEach(([status, requirement]) => {
+        const card = document.createElement('div');
+        card.className = 'panel';
+        card.innerHTML = `
+          <div class="panel-title">${status}</div>
+          <p class="muted">${requirement || 'Aucun prérequis'}</p>
+        `;
+        checklistGrid.appendChild(card);
+      });
+      const missing = Object.keys(data.transitions).filter(s => !(s in data.checklist_requirements));
+      missing.forEach((status) => {
+        const card = document.createElement('div');
+        card.className = 'panel';
+        card.innerHTML = `
+          <div class="panel-title">${status}</div>
+          <p class="muted">Aucun prérequis</p>
+        `;
+        checklistGrid.appendChild(card);
+      });
+    }
+
+    function renderSelect(select, values) {
+      select.innerHTML = '';
+      values.forEach((value) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        select.appendChild(option);
+      });
+    }
+
+    function renderRoleCheckboxes(container, roles) {
+      const roleList = ['manipulateur', 'physicien', 'oncologue', 'dosimetrist', 'coordination'];
+      container.innerHTML = '';
+      roleList.forEach((role) => {
+        const wrapper = document.createElement('label');
+        wrapper.className = 'checkbox';
+        wrapper.innerHTML = `
+          <input type="checkbox" value="${role}" ${roles.includes(role) ? 'checked' : ''} />
+          <span>${role}</span>
+        `;
+        container.appendChild(wrapper);
+      });
+    }
+
+    function hydrateForms(data) {
+      renderSelect(document.getElementById('transition-source'), statuses);
+      renderSelect(document.getElementById('roles-status'), statuses);
+      renderSelect(document.getElementById('checklist-status'), statuses);
+
+      const requirementSelect = document.getElementById('checklist-requirement');
+      requirementSelect.innerHTML = '<option value="">Aucun</option>';
+      checklistFields.forEach((f) => {
+        const option = document.createElement('option');
+        option.value = f;
+        option.textContent = f;
+        requirementSelect.appendChild(option);
+      });
+
+      const currentRoles = data.allowed_roles[statuses[0]] || [];
+      renderRoleCheckboxes(document.getElementById('roles-options'), currentRoles);
+      document.getElementById('roles-status').addEventListener('change', (e) => {
+        const selected = e.target.value;
+        renderRoleCheckboxes(
+          document.getElementById('roles-options'),
+          data.allowed_roles[selected] || []
+        );
+      });
+    }
+
+    function updateDashboard(data) {
+      renderTransitions(data);
+      renderRoles(data);
+      renderChecklist(data);
+    }
+
+    async function submitJSON(url, payload) {
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const detail = (await response.json()).detail || 'Erreur inconnue';
+        throw new Error(detail);
+      }
+      return response.json();
+    }
+
+    transitionForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const source = document.getElementById('transition-source').value;
+      const targetsRaw = document.getElementById('transition-targets').value;
+      const targets = targetsRaw
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+      try {
+        const updated = await submitJSON('/admin/workflow/transitions', { source, targets });
+        updateDashboard(updated);
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+
+    rolesForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const status = document.getElementById('roles-status').value;
+      const roles = Array.from(document.querySelectorAll('#roles-options input:checked')).map(
+        (input) => input.value
+      );
+      try {
+        const updated = await submitJSON('/admin/workflow/roles', { status, roles });
+        updateDashboard(updated);
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+
+    checklistForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const status = document.getElementById('checklist-status').value;
+      const requirement = document.getElementById('checklist-requirement').value || null;
+      try {
+        const updated = await submitJSON('/admin/workflow/checklist', { status, requirement });
+        updateDashboard(updated);
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+
+    updateDashboard(snapshot);
+    hydrateForms(snapshot);
+  </script>
+</body>
+</html>
