@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Oncoflow · Board dossiers</title>
+  <link
+    href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.4/dist/tailwind.min.css"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="{{ root_path }}/static/style.css" />
+</head>
+<body class="bg-slate-950 text-slate-50">
+  <div class="max-w-6xl xl:max-w-7xl mx-auto px-6 py-10 space-y-8">
+    <header class="flex flex-wrap gap-4 items-start justify-between">
+      <div>
+        <p class="text-sm text-slate-400">Pilotage temps réel</p>
+        <h1 class="text-3xl font-bold text-white">Board dossiers patients</h1>
+        <p class="text-sm text-slate-400">Filtrer, visualiser, chatter et valider les étapes avec suivi checklist.</p>
+      </div>
+      <div class="flex flex-wrap gap-3 items-center">
+        <div class="panel !bg-slate-900 border border-slate-800 shadow-inner min-w-[280px]">
+          <p class="text-xs text-slate-400 mb-2">Identité (utilisée pour les validations & messages)</p>
+          <div class="flex gap-2">
+            <input id="user-input" class="input" placeholder="Utilisateur" aria-label="Utilisateur" />
+            <select id="role-input" class="select" aria-label="Role">
+              <option value="manipulateur">manipulateur</option>
+              <option value="physicien">physicien</option>
+              <option value="oncologue">oncologue</option>
+              <option value="dosimetrist">dosimetrist</option>
+              <option value="coordination">coordination</option>
+            </select>
+          </div>
+        </div>
+        <button id="seed-demo" class="btn">Générer une démo</button>
+        <a href="{{ root_path }}/" class="btn" style="background: linear-gradient(90deg,#22c55e,#14b8a6)">Admin workflow</a>
+      </div>
+    </header>
+
+    <section class="grid lg:grid-cols-[1.6fr_1fr] gap-6">
+      <div class="space-y-4">
+        <div class="panel grid md:grid-cols-3 gap-4">
+          <div>
+            <label class="label">Recherche</label>
+            <input id="search" class="input" placeholder="Patient, protocole, étiquette" />
+          </div>
+          <div>
+            <label class="label">Priorité</label>
+            <select id="priority-filter" class="select">
+              <option value="">Toutes</option>
+              <option value="haute">Haute</option>
+              <option value="standard">Standard</option>
+              <option value="basse">Basse</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Machine</label>
+            <select id="machine-filter" class="select">
+              <option value="">Toutes</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Statut</label>
+            <select id="status-filter" class="select">
+              <option value="">Tous les statuts</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Étiquette</label>
+            <input id="tag-filter" class="input" placeholder="Taper une étiquette" />
+          </div>
+          <div class="flex items-end">
+            <div class="text-slate-400 text-sm">Identité appliquée à toutes les actions.</div>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-3 gap-3" id="metrics"></div>
+
+        <section class="grid md:grid-cols-3 gap-4" id="board-columns"></section>
+      </div>
+
+      <aside class="panel sticky top-6 h-fit space-y-4" id="detail-panel">
+        <div>
+          <p class="eyebrow">Fiche dossier</p>
+          <h2 class="panel-title" id="detail-title">Sélectionnez un dossier</h2>
+          <p class="muted text-sm">Historique, checklist, messages et métadonnées patient.</p>
+        </div>
+        <div id="detail-content" class="space-y-3 text-sm text-slate-200">
+          <p class="muted">Cliquez sur une carte pour afficher le détail.</p>
+        </div>
+      </aside>
+    </section>
+  </div>
+
+  <template id="card-template">
+    <div class="panel space-y-3 hover:ring-1 hover:ring-sky-400/40 transition" role="button">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="font-semibold text-slate-50 text-lg card-title"></div>
+          <p class="text-xs text-slate-400">Machine <span class="machine"></span> · Priorité <span class="priorite"></span></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="pill statut"></span>
+          <span class="pill pill-soft hidden messages-pill"></span>
+        </div>
+      </div>
+      <div class="text-sm text-slate-300 leading-6 info"></div>
+      <div class="chip-row tags"></div>
+      <div class="progress"><div class="progress-bar"></div></div>
+      <div class="space-y-2">
+        <label class="label">Rôle</label>
+        <select class="select role-select"></select>
+        <label class="label">Commentaire (recul ou consignes)</label>
+        <textarea class="input comment" rows="2" placeholder="Contexte, justification, consignes"></textarea>
+      </div>
+      <div class="space-y-2 actions"></div>
+      <div class="text-xs text-slate-400">
+        <p class="font-semibold text-slate-200">Historique</p>
+        <ul class="history list-disc pl-4 space-y-1"></ul>
+      </div>
+    </div>
+  </template>
+
+  <template id="message-template">
+    <div class="panel bg-slate-900/50 border-slate-800">
+      <div class="flex items-center justify-between text-xs text-slate-400">
+        <span class="author font-semibold text-slate-200"></span>
+        <span class="timestamp"></span>
+      </div>
+      <p class="mt-2 text-slate-100"></p>
+      <div class="mentions text-xs text-slate-400 mt-1"></div>
+    </div>
+  </template>
+
+  <script>
+    const rootPath = "{{ root_path }}";
+    const apiUrl = (path) => `${rootPath}${path}`;
+    const config = {{ config | tojson }};
+    const statuses = {{ statuses | tojson }};
+    const boardColumns = document.getElementById('board-columns');
+    const cardTemplate = document.getElementById('card-template');
+    const roleOptions = ['manipulateur', 'physicien', 'oncologue', 'dosimetrist', 'coordination'];
+    const userInput = document.getElementById('user-input');
+    const roleInput = document.getElementById('role-input');
+    const metricsContainer = document.getElementById('metrics');
+    const machineFilter = document.getElementById('machine-filter');
+    const priorityFilter = document.getElementById('priority-filter');
+    const statusFilter = document.getElementById('status-filter');
+    const searchInput = document.getElementById('search');
+    const tagFilter = document.getElementById('tag-filter');
+    const detailTitle = document.getElementById('detail-title');
+    const detailContent = document.getElementById('detail-content');
+
+    let boardData = {};
+    let selectedDossier = null;
+
+    function currentIdentity() {
+      const stored = JSON.parse(localStorage.getItem('identity') || '{}');
+      return {
+        user: stored.user || 'console',
+        role: stored.role || 'physicien',
+      };
+    }
+
+    function persistIdentity(user, role) {
+      localStorage.setItem('identity', JSON.stringify({ user, role }));
+    }
+
+    function syncIdentityInputs() {
+      const identity = currentIdentity();
+      userInput.value = identity.user;
+      roleInput.value = identity.role;
+    }
+
+    function statusLabel(status) {
+      return status.replaceAll('_', ' ');
+    }
+
+    function buildContext(target) {
+      const requirement = config.checklist_requirements[target];
+      if (!requirement) return {};
+      return { [requirement]: true };
+    }
+
+    function populateRoles(select, allowed) {
+      select.innerHTML = '';
+      const identityRole = currentIdentity().role;
+      roleOptions.forEach((role) => {
+        const option = document.createElement('option');
+        option.value = role;
+        option.textContent = role;
+        option.selected = role === identityRole || allowed.includes(role);
+        select.appendChild(option);
+      });
+      if (allowed.length === 1) {
+        select.value = allowed[0];
+      } else if (allowed.includes(identityRole)) {
+        select.value = identityRole;
+      }
+    }
+
+    function identityHeaders(roleOverride) {
+      const identity = currentIdentity();
+      return {
+        'Content-Type': 'application/json',
+        'X-User': identity.user,
+        'X-Role': roleOverride || identity.role,
+      };
+    }
+
+    function renderHistory(list, events) {
+      list.innerHTML = '';
+      if (!events.length) {
+        list.innerHTML = '<li class="text-slate-500">Aucun mouvement</li>';
+        return;
+      }
+      events
+        .slice()
+        .reverse()
+        .forEach((event) => {
+          const li = document.createElement('li');
+          const comment = event.commentaire ? ` · ${event.commentaire}` : '';
+          li.innerHTML = `<span class="text-slate-200">${event.nouveau_statut}</span> · <span class="text-slate-400">${event.role}</span>${comment}`;
+          list.appendChild(li);
+        });
+    }
+
+    function isBackward(current, target) {
+      const order = config.status_order;
+      return order.indexOf(target) < order.indexOf(current);
+    }
+
+    function checklistProgress(checklists) {
+      const values = Object.values(checklists || {});
+      if (!values.length) return 0;
+      const done = values.filter(Boolean).length;
+      return Math.round((done / values.length) * 100);
+    }
+
+    async function applyTransition(card, dossierId, currentStatus, target) {
+      const commentField = card.querySelector('.comment');
+      const roleSelect = card.querySelector('.role-select');
+      const role = roleSelect.value;
+      const identity = currentIdentity();
+      const context = buildContext(target);
+
+      if (isBackward(currentStatus, target) && !commentField.value.trim()) {
+        alert('Un commentaire est requis pour revenir en arrière.');
+        return;
+      }
+
+      const payload = {
+        cible: target,
+        contexte: context,
+        commentaire: commentField.value || null,
+        acteur: identity.user,
+        role,
+      };
+
+      const button = card.querySelector(`button[data-target="${target}"]`);
+      if (button) button.disabled = true;
+      try {
+        const res = await fetch(apiUrl(`/dossiers/${dossierId}/transition`), {
+          method: 'POST',
+          headers: identityHeaders(role),
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const detail = (await res.json()).detail || 'Erreur inconnue';
+          throw new Error(detail);
+        }
+        await loadBoard();
+        if (selectedDossier === dossierId) {
+          await loadDetail(dossierId);
+        }
+      } catch (error) {
+        alert(error.message);
+      } finally {
+        if (button) button.disabled = false;
+      }
+    }
+
+    function renderCard(status, dossier) {
+      const fragment = cardTemplate.content.cloneNode(true);
+      const card = fragment.querySelector('.panel');
+      card.dataset.dossierId = dossier.id;
+      card.querySelector('.card-title').textContent = dossier.patient || 'Patient';
+      const badge = card.querySelector('.pill.statut');
+      badge.textContent = statusLabel(status);
+      badge.style.background = 'rgba(56,189,248,0.1)';
+      badge.style.color = '#7dd3fc';
+
+      const messageBadge = card.querySelector('.messages-pill');
+      if (dossier.messages && dossier.messages.length) {
+        messageBadge.classList.remove('hidden');
+        messageBadge.textContent = `${dossier.messages.length} message(s)`;
+      }
+
+      card.querySelector('.machine').textContent = dossier.machine || '—';
+      card.querySelector('.priorite').textContent = dossier.priorite || '—';
+
+      const info = card.querySelector('.info');
+      info.innerHTML = `Protocole : <strong>${dossier.protocole || '—'}</strong> · Checklists : ${checklistProgress(dossier.checklists)}%`;
+
+      const tags = card.querySelector('.tags');
+      if (dossier.etiquettes && dossier.etiquettes.length) {
+        tags.innerHTML = dossier.etiquettes.map((t) => `<span class="chip">${t}</span>`).join('');
+      } else {
+        tags.innerHTML = '<span class="muted">Aucune étiquette</span>';
+      }
+
+      const progressBar = card.querySelector('.progress-bar');
+      progressBar.style.width = `${checklistProgress(dossier.checklists)}%`;
+
+      populateRoles(card.querySelector('.role-select'), config.allowed_roles[dossier.statut] || roleOptions);
+      renderHistory(card.querySelector('.history'), dossier.historique || []);
+
+      const actionsContainer = card.querySelector('.actions');
+      const allowedTargets = config.transitions[dossier.statut] || [];
+      if (!allowedTargets.length) {
+        actionsContainer.innerHTML = '<p class="muted">Aucune transition configurée.</p>';
+      } else {
+        allowedTargets.forEach((target) => {
+          const prereq = config.checklist_requirements[target];
+          const backward = isBackward(dossier.statut, target);
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.dataset.target = target;
+          button.className = 'btn w-full';
+          button.textContent = `Passer en ${statusLabel(target)}`;
+          const helper = document.createElement('p');
+          helper.className = 'help';
+          helper.textContent = backward
+            ? 'Commentaire requis pour retour en arrière'
+            : prereq
+            ? `Pré-requis : ${prereq}`
+            : 'Transition directe';
+          button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            applyTransition(card, dossier.id, dossier.statut, target);
+          });
+          const wrapper = document.createElement('div');
+          wrapper.appendChild(button);
+          wrapper.appendChild(helper);
+          actionsContainer.appendChild(wrapper);
+        });
+      }
+
+      card.addEventListener('click', () => loadDetail(dossier.id));
+      return fragment;
+    }
+
+    function renderBoard(data) {
+      boardColumns.innerHTML = '';
+      statuses.forEach((status) => {
+        const column = document.createElement('div');
+        column.className = 'card space-y-4';
+        column.innerHTML = `
+          <div class="card-header">
+            <div>
+              <p class="eyebrow">${statusLabel(status)}</p>
+              <h2 class="card-title">${(data[status] || []).length} dossiers</h2>
+            </div>
+            <div class="pill">${config.checklist_requirements[status] || 'aucun prérequis'}</div>
+          </div>
+        `;
+        const stack = document.createElement('div');
+        stack.className = 'space-y-3';
+        (data[status] || []).forEach((dossier) => {
+          stack.appendChild(renderCard(status, dossier));
+        });
+        if (!(data[status] || []).length) {
+          const empty = document.createElement('div');
+          empty.className = 'panel muted';
+          empty.textContent = 'Aucun dossier ici pour le moment';
+          stack.appendChild(empty);
+        }
+        column.appendChild(stack);
+        boardColumns.appendChild(column);
+      });
+    }
+
+    function renderMetrics(data) {
+      const total = Object.values(data).flat().length;
+      const blocked = (data['A_REPRENDRE_CONTOURAGE'] || []).length;
+      const ready = (data['PRET_POUR_TRAITEMENT'] || []).length;
+      metricsContainer.innerHTML = '';
+      const cards = [
+        { label: 'Total dossiers', value: total, accent: 'info' },
+        { label: 'Prêts à traiter', value: ready, accent: 'success' },
+        { label: 'À reprendre', value: blocked, accent: 'warn' },
+      ];
+      cards.forEach((card) => {
+        const el = document.createElement('div');
+        el.className = 'mini-card';
+        el.innerHTML = `<p class="eyebrow">${card.label}</p><p class="text-2xl font-bold">${card.value}</p>`;
+        el.dataset.accent = card.accent;
+        metricsContainer.appendChild(el);
+      });
+    }
+
+    function fillFilters(data) {
+      const machines = new Set();
+      Object.values(data).forEach((list) => list.forEach((d) => { if (d.machine) machines.add(d.machine); }));
+      machineFilter.innerHTML = '<option value="">Toutes</option>' + Array.from(machines).map((m) => `<option value="${m}">${m}</option>`).join('');
+      statusFilter.innerHTML = '<option value="">Tous les statuts</option>' + statuses.map((s) => `<option value="${s}">${statusLabel(s)}</option>`).join('');
+    }
+
+    function applyFilters() {
+      const query = searchInput.value.toLowerCase();
+      const priority = priorityFilter.value;
+      const machine = machineFilter.value;
+      const statusSelection = statusFilter.value;
+      const tag = tagFilter.value.toLowerCase();
+      const filtered = {};
+      statuses.forEach((status) => {
+        filtered[status] = (boardData[status] || []).filter((dossier) => {
+          if (statusSelection && dossier.statut !== statusSelection) return false;
+          if (priority && dossier.priorite !== priority) return false;
+          if (machine && dossier.machine !== machine) return false;
+          if (tag && !(dossier.etiquettes || []).some((t) => t.toLowerCase().includes(tag))) return false;
+          if (query) {
+            const haystack = `${dossier.patient} ${dossier.protocole || ''} ${(dossier.etiquettes || []).join(' ')}`.toLowerCase();
+            if (!haystack.includes(query)) return false;
+          }
+          return true;
+        });
+      });
+      renderBoard(filtered);
+      renderMetrics(filtered);
+    }
+
+    async function loadBoard() {
+      const response = await fetch(apiUrl('/ui/dossiers'));
+      boardData = await response.json();
+      fillFilters(boardData);
+      applyFilters();
+    }
+
+    async function loadDetail(dossierId) {
+      selectedDossier = dossierId;
+      detailTitle.textContent = 'Chargement...';
+      detailContent.innerHTML = '';
+      const response = await fetch(apiUrl(`/ui/dossiers/${dossierId}`));
+      if (!response.ok) {
+        detailTitle.textContent = 'Erreur de chargement';
+        detailContent.innerHTML = '<p class="text-red-300">Impossible de récupérer le dossier.</p>';
+        return;
+      }
+      const data = await response.json();
+      const { dossier, patient, messages, historique } = data;
+      detailTitle.textContent = `${patient.prenom} ${patient.nom}`;
+      const progress = checklistProgress(dossier.checklists);
+
+      const checklistFields = Object.keys(dossier.checklists || {});
+      const checklistHtml = checklistFields
+        .map((key) => {
+          const checked = dossier.checklists[key];
+          return `<label class="checkbox"><input type="checkbox" data-flag="${key}" ${checked ? 'checked' : ''}/> ${key}</label>`;
+        })
+        .join('');
+
+      const historyHtml = historique
+        .slice()
+        .reverse()
+        .map((h) => `<div class="timeline-item"><div>${statusLabel(h.nouveau_statut)}</div><div class="muted text-xs">${h.role} · ${h.commentaire || '—'}</div></div>`)
+        .join('');
+
+      const messageTemplate = document.getElementById('message-template');
+      const messageList = document.createElement('div');
+      messageList.className = 'space-y-2';
+      if (messages.length === 0) {
+        messageList.innerHTML = '<p class="muted">Aucun message</p>';
+      } else {
+        messages
+          .slice()
+          .reverse()
+          .forEach((m) => {
+            const fragment = messageTemplate.content.cloneNode(true);
+            fragment.querySelector('.author').textContent = `${m.auteur} · ${m.role}`;
+            fragment.querySelector('.timestamp').textContent = new Date(m.horodatage).toLocaleString();
+            fragment.querySelector('p').textContent = m.texte;
+            fragment.querySelector('.mentions').textContent = m.mentions && m.mentions.length ? `Mentions : ${m.mentions.join(', ')}` : '';
+            messageList.appendChild(fragment);
+          });
+      }
+
+      detailContent.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div class="pill">${statusLabel(dossier.statut)}</div>
+          <div class="pill pill-soft">Checklist ${progress}%</div>
+        </div>
+        <div class="panel">
+          <p class="label">Coordonnées patient</p>
+          <p class="text-sm">${patient.pathologie || 'Pathologie non renseignée'}</p>
+          <p class="muted text-xs">Médecins référents : ${(patient.medecins_referents || []).join(', ') || '—'}</p>
+          <p class="muted text-xs">Machine : ${dossier.machine || '—'} · Priorité : ${dossier.priorite || '—'}</p>
+        </div>
+        <div class="panel space-y-2">
+          <div class="flex items-center justify-between">
+            <p class="panel-title">Checklist</p>
+            <button class="btn btn-secondary" id="save-checklist">Sauvegarder</button>
+          </div>
+          <div class="grid grid-cols-2 gap-2" id="checklist-flags">${checklistHtml}</div>
+          <p class="help">Les cases cochées sont sauvegardées et utilisables comme contexte des transitions.</p>
+        </div>
+        <div class="panel">
+          <p class="panel-title">Historique</p>
+          <div class="timeline">${historyHtml || '<p class="muted">Aucun mouvement</p>'}</div>
+        </div>
+        <div class="panel space-y-3">
+          <div class="flex items-center justify-between">
+            <p class="panel-title">Messages</p>
+            <span class="pill pill-soft">${messages.length}</span>
+          </div>
+          <div id="message-list"></div>
+          <div class="space-y-2">
+            <label class="label">Ajouter un message</label>
+            <textarea id="new-message" class="input" rows="3" placeholder="Note, consigne ou incident"></textarea>
+            <div class="grid grid-cols-2 gap-2">
+              <input id="new-mentions" class="input" placeholder="Mentions (séparées par virgule)" />
+              <input id="new-attachments" class="input" placeholder="Pièces jointes (URL ou noms, séparés par virgule)" />
+            </div>
+            <button class="btn w-full" id="send-message">Publier</button>
+          </div>
+        </div>
+      `;
+      detailContent.querySelector('#message-list').replaceWith(messageList);
+
+      detailContent.querySelector('#save-checklist').addEventListener('click', async () => {
+        const flags = {};
+        detailContent.querySelectorAll('#checklist-flags input[type="checkbox"]').forEach((checkbox) => {
+          flags[checkbox.dataset.flag] = checkbox.checked;
+        });
+        try {
+          const res = await fetch(apiUrl(`/dossiers/${dossierId}/checklists`), {
+            method: 'POST',
+            headers: identityHeaders(),
+            body: JSON.stringify({ flags }),
+          });
+          if (!res.ok) {
+            const detail = (await res.json()).detail || 'Erreur';
+            throw new Error(detail);
+          }
+          await loadBoard();
+          await loadDetail(dossierId);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      detailContent.querySelector('#send-message').addEventListener('click', async () => {
+        const texte = detailContent.querySelector('#new-message').value.trim();
+        if (!texte) {
+          alert('Message vide');
+          return;
+        }
+        const mentionsRaw = detailContent.querySelector('#new-mentions').value.trim();
+        const attachmentsRaw = detailContent.querySelector('#new-attachments').value.trim();
+        const mentions = mentionsRaw ? mentionsRaw.split(',').map((m) => m.trim()).filter(Boolean) : [];
+        const pieces_jointes = attachmentsRaw ? attachmentsRaw.split(',').map((m) => m.trim()).filter(Boolean) : [];
+        const identity = currentIdentity();
+        try {
+          const res = await fetch(apiUrl(`/dossiers/${dossierId}/messages`), {
+            method: 'POST',
+            headers: identityHeaders(),
+            body: JSON.stringify({
+              dossier_id: dossierId,
+              auteur: identity.user,
+              role: identity.role,
+              texte,
+              mentions,
+              pieces_jointes,
+              visibilite: 'equipe',
+            }),
+          });
+          if (!res.ok) {
+            const detail = (await res.json()).detail || 'Erreur';
+            throw new Error(detail);
+          }
+          await loadDetail(dossierId);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    }
+
+    syncIdentityInputs();
+    userInput.addEventListener('change', () => {
+      persistIdentity(userInput.value || 'console', roleInput.value);
+      applyFilters();
+    });
+    roleInput.addEventListener('change', () => {
+      persistIdentity(userInput.value || 'console', roleInput.value);
+      applyFilters();
+    });
+
+    document.getElementById('seed-demo').addEventListener('click', async () => {
+      const response = await fetch(apiUrl('/admin/demo/seed'), { method: 'POST' });
+      if (!response.ok) {
+        alert('Impossible de générer la démo');
+        return;
+      }
+      const data = await response.json();
+      boardData = data;
+      fillFilters(boardData);
+      applyFilters();
+    });
+
+    [searchInput, priorityFilter, machineFilter, statusFilter, tagFilter].forEach((input) => {
+      input.addEventListener('input', applyFilters);
+      input.addEventListener('change', applyFilters);
+    });
+
+    loadBoard();
+  </script>
+</body>
+</html>
