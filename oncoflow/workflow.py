@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from .models import ChecklistState, DossierStatus, Role, Transition, WorkflowSnapshot
+from .models import ChecklistState, DossierStatus, Role, Transition
 
 
 class TransitionError(ValueError):
@@ -15,14 +15,13 @@ class WorkflowEngine:
         DossierStatus.PRESCRIPTION_VALIDEE,
         DossierStatus.CONTOURS_VALIDES,
         DossierStatus.PLAN_EN_REVUE,
-        DossierStatus.A_REPRENDRE_CONTOURAGE,
         DossierStatus.PLAN_VALIDE,
         DossierStatus.PRET_POUR_TRAITEMENT,
         DossierStatus.EN_TRAITEMENT,
         DossierStatus.CLOTURE,
     ]
 
-    base_forward_rules: Dict[DossierStatus, List[DossierStatus]] = {
+    forward_rules: Dict[DossierStatus, List[DossierStatus]] = {
         DossierStatus.A_PREPARER: [DossierStatus.PRESCRIPTION_VALIDEE],
         DossierStatus.PRESCRIPTION_VALIDEE: [
             DossierStatus.CONTOURS_VALIDES,
@@ -53,7 +52,7 @@ class WorkflowEngine:
         DossierStatus.A_REPRENDRE_CONTOURAGE: [DossierStatus.CONTOURS_VALIDES],
     }
 
-    base_allowed_roles: Dict[DossierStatus, List[Role]] = {
+    allowed_roles: Dict[DossierStatus, List[Role]] = {
         status: [
             Role.MANIPULATEUR,
             Role.PHYSICIEN,
@@ -64,7 +63,7 @@ class WorkflowEngine:
         for status in DossierStatus
     }
 
-    base_checklist_requirements: Dict[DossierStatus, str] = {
+    checklist_requirements: Dict[DossierStatus, str] = {
         DossierStatus.PRESCRIPTION_VALIDEE: "identity_validated",
         DossierStatus.CONTOURS_VALIDES: "prescription_signed",
         DossierStatus.PLAN_EN_REVUE: "contours_locked",
@@ -72,18 +71,6 @@ class WorkflowEngine:
         DossierStatus.PRET_POUR_TRAITEMENT: "signature_oncologue",
         DossierStatus.EN_TRAITEMENT: "qa_machine_jour",
     }
-
-    def __init__(self) -> None:
-        self.reset()
-
-    def reset(self) -> None:
-        self.forward_rules = {
-            status: list(targets) for status, targets in self.base_forward_rules.items()
-        }
-        self.allowed_roles = {
-            status: list(roles) for status, roles in self.base_allowed_roles.items()
-        }
-        self.checklist_requirements = dict(self.base_checklist_requirements)
 
     def validate_transition(
         self,
@@ -171,13 +158,21 @@ class WorkflowEngine:
         elif status in self.checklist_requirements:
             del self.checklist_requirements[status]
 
-    def snapshot(self) -> WorkflowSnapshot:
-        return WorkflowSnapshot(
-            transitions=self.forward_rules,
-            checklist_requirements=self.checklist_requirements,
-            allowed_roles=self.allowed_roles,
-            status_order=self.order,
-        )
+    def snapshot(self) -> dict:
+        return {
+            "transitions": {
+                status.value: [target.value for target in targets]
+                for status, targets in self.forward_rules.items()
+            },
+            "checklist_requirements": {
+                status.value: requirement
+                for status, requirement in self.checklist_requirements.items()
+            },
+            "allowed_roles": {
+                status.value: [role.value for role in roles]
+                for status, roles in self.allowed_roles.items()
+            },
+        }
 
 
 engine = WorkflowEngine()

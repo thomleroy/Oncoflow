@@ -78,68 +78,37 @@ Toute transition inverse exige un commentaire et génère une notification aux r
 - [ ] Prototype d'authentification OIDC + RBAC.
 - [ ] Connecteur d'import DICOM/PACS (placeholder dans le MVP si non disponible).
 - [ ] Mécanisme de notifications (emails internes ou webhook Slack/Teams).
+- [ ] Rapports d'activité et exports PDF.
 
-## Installation rapide
+## Démarrer l'API de prototype
+
+Ce dépôt contient une première API FastAPI avec stockage en mémoire pour enchaîner les statuts, poster des messages et créer des patients/dossiers.
+
+1. Créer un environnement virtuel Python 3.11+ puis installer les dépendances :
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+2. Lancer le serveur de développement :
+
+```bash
 uvicorn oncoflow.app:app --reload
 ```
 
-Pour peupler la démo :
+3. Explorer la documentation OpenAPI générée automatiquement : http://localhost:8000/docs.
+
+4. Ouvrir la console d'administration : http://localhost:8000/. Elle permet d'éditer en direct les transitions autorisées,
+   les rôles pouvant atteindre une étape et les prérequis de checklist. Les mises à jour se propagent immédiatement aux
+   validations côté API.
+
+5. Lancer les tests automatisés :
 
 ```bash
-curl -X POST http://localhost:8000/admin/demo/seed -H "X-API-Key: devkey"
+pytest
 ```
-
-## Sécurité et administration
-
-Les endpoints `/admin/*` et `/admin/demo/seed` exigent une clé API transmise dans `X-API-Key`. Par défaut la valeur est `devkey`; définissez `ONCOFLOW_API_KEY` pour la modifier.
-
-Toutes les actions d'écriture (patients, dossiers, transitions, messages) nécessitent désormais une identité explicite à fournir via les entêtes `X-User` et `X-Role` (valeurs : `manipulateur`, `physicien`, `oncologue`, `dosimetrist`, `coordination`). Le board conserve ces informations dans le navigateur et les réutilise pour signer chaque validation.
-
-## Persistance
-
-Le stockage par défaut utilise SQLite (`data/state.db`) avec un schéma normalisé (patients, dossiers, messages, transitions, notifications) et des clés étrangères. Les migrations sont versionnées dans `schema_version` et appliquées automatiquement au démarrage ; le mode WAL et les index par dossier renforcent la concurrence et les requêtes de supervision. Un dépôt JSON reste disponible (`FileBackedRepository`) pour les tests hors ligne ou les démos rapides.
-
-Vous pouvez rediriger le fichier de base via `ONCOFLOW_DATABASE_URL=sqlite:///chemin/vers/state.db`.
-
-## Intégrations et notifications
-
-- Export FHIR minimal : `GET /dossiers/{id}/fhir` renvoie un bundle Patient + Procedure pour faciliter les échanges DPI/FHIR.
-- Flux de notifications : `GET /notifications` expose les derniers événements (messages, transitions) pour alimenter un webhook ou un centre de supervision.
-- [ ] Rapports d'activité et exports PDF.
-
-## Guide de lancement (board + admin)
-
-1. **Pré-requis** : Python 3.11+, `venv` et `pip`. Les dépendances sont listées dans `requirements.txt`.
-2. **Installation** :
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-3. **Variables optionnelles** (sinon valeurs par défaut) :
-   - `ONCOFLOW_API_KEY` : clé API pour `/admin/*` (défaut : `devkey`).
-   - `ONCOFLOW_DATABASE_URL` : chemin SQLite (défaut : `sqlite:///data/state.db`).
-4. **Lancer le serveur** :
-   ```bash
-   uvicorn oncoflow.app:app --reload
-   ```
-5. **Peupler la démo** (facultatif) :
-   ```bash
-   curl -X POST http://localhost:8000/admin/demo/seed -H "X-API-Key: ${ONCOFLOW_API_KEY:-devkey}"
-   ```
-6. **Explorer l'interface** :
-   - Board opérationnel : http://localhost:8000/board (filtres, panel dossier, transitions signées via X-User/X-Role).
-   - Console d'admin : http://localhost:8000/ (édition des transitions, rôles et prérequis de checklist).
-   - Documentation API : http://localhost:8000/docs.
-7. **Tester** :
-   ```bash
-   pytest
-   ```
 
 ### Endpoints d'administration
 
@@ -147,10 +116,3 @@ Vous pouvez rediriger le fichier de base via `ONCOFLOW_DATABASE_URL=sqlite:///ch
 - `PUT /admin/workflow/transitions` : modifier les cibles autorisées pour un statut source.
 - `PUT /admin/workflow/roles` : restreindre ou élargir les rôles autorisés pour un statut cible.
 - `PUT /admin/workflow/checklist` : définir ou retirer un prérequis de checklist pour un statut.
-- `GET /admin/audit` : récupérer le journal horodaté des transitions (clé API requise).
-
-### Endpoints métier et UX
-
-- `GET /ui/dossiers` : agrégation des dossiers par statut avec historique, messages et checklists pour le board Kanban.
-- `GET /ui/dossiers/{id}` : fiche détaillée combinant patient, dossier, timeline et fil de discussion.
-- `POST /dossiers/{id}/checklists` : mise à jour des cases checklist par dossier (identité X-User/X-Role requise) pour suivre les prérequis métier.

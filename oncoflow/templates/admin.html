@@ -8,7 +8,7 @@
     href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.4/dist/tailwind.min.css"
     rel="stylesheet"
   />
-  <link rel="stylesheet" href="{{ root_path }}/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body class="bg-slate-100 text-slate-900">
   <div class="max-w-6xl mx-auto px-6 py-10 space-y-10">
@@ -109,8 +109,6 @@
   </div>
 
   <script>
-    const rootPath = "{{ root_path }}";
-    const apiUrl = (path) => `${rootPath}${path}`;
     const snapshot = {{ config | tojson }};
     const statuses = {{ statuses | tojson }};
     const checklistFields = {{ checklist_fields | tojson }};
@@ -230,7 +228,7 @@
     }
 
     async function submitJSON(url, payload) {
-      const response = await fetch(apiUrl(url), {
+      const response = await fetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
